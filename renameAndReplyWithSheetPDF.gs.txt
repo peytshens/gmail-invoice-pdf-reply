@@ -1,0 +1,70 @@
+/**
+ * Rename a Google Sheet, export a tab as PDF, and reply to a Gmail thread with it.
+ *
+ * Before using:
+ * 1. Replace the placeholder SHEET_ID and SHEET_NAME with your values.
+ * 2. Replace the placeholder EMAIL_THREAD_ID with your Gmail thread message ID.
+ * 3. Deploy/run inside Google Apps Script with necessary permissions.
+ */
+
+function renameAndReplyWithSheetPDF() {
+  // === CONFIGURATION (replace with your actual IDs) ===
+  const sheetId = "YOUR_SHEET_ID_HERE";        // Google Sheet ID
+  const sheetName = "YOUR_SHEET_NAME_HERE";    // Target sheet/tab name
+  const emailThreadId = "YOUR_EMAIL_THREAD_ID_HERE"; // Gmail thread message ID
+
+  // === GET TODAY'S DATE IN "Month Day, Year" FORMAT ===
+  const today = new Date();
+  const months = [
+    "January", "February", "March", "April", "May", "June",
+    "July", "August", "September", "October", "November", "December"
+  ];
+  const formattedDate = `${months[today.getMonth()]} ${today.getDate()}, ${today.getFullYear()}`;
+
+  // === CREATE A NEW SHEET TITLE ===
+  const newTitle = `${formattedDate} Client Invoices | Sample Data`;
+
+  // === RENAME THE SPREADSHEET TEMPORARILY ===
+  const spreadsheet = SpreadsheetApp.openById(sheetId);
+  const originalTitle = spreadsheet.getName();
+  spreadsheet.setName(newTitle);
+
+  // === BUILD A PDF EXPORT URL FOR THIS SHEET ===
+  const pdfUrl = `https://docs.google.com/spreadsheets/d/${sheetId}/export?format=pdf&gid=${getSheetGid(sheetId, sheetName)}&portrait=true&fitw=true&top_margin=0.75&bottom_margin=0.75&left_margin=0.75&right_margin=0.75`;
+
+  // === FETCH PDF AS A BLOB FILE ===
+  const token = ScriptApp.getOAuthToken();
+  const response = UrlFetchApp.fetch(pdfUrl, {
+    headers: { Authorization: `Bearer ${token}` }
+  });
+  const pdfBlob = response.getBlob().setName(`${newTitle}.pdf`);
+
+  // === SEARCH FOR THE EMAIL THREAD BY MESSAGE ID ===
+  const threads = GmailApp.search(`rfc822msgid:${emailThreadId}`);
+  if (threads.length === 0) {
+    Logger.log("❌ Error: No thread found for this Message ID.");
+    spreadsheet.setName(originalTitle);
+    return;
+  }
+  const thread = threads[0];
+
+  // === REPLY TO THE THREAD WITH THE PDF ATTACHMENT ===
+  const messageBody = `Hi John,
+  
+Here is the latest invoice for ${formattedDate}
+
+Thank you for your prompt payment
+
+Best Regards,
+Your Name`;
+  thread.reply(messageBody, { attachments: [pdfBlob] });
+
+  // === RESTORE THE ORIGINAL SHEET NAME ===
+  spreadsheet.setName(originalTitle);
+}
+
+// Helper function: Get the GID (tab ID) of a sheet by its name
+function getSheetGid(sheetId, sheetName) {
+  const sheet = SpreadsheetApp.openById(sheetId).getSheetByName(sheetName);
+  return sheet ? sheet.getSheetId() : 0;
+}
